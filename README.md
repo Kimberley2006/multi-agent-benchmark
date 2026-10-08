@@ -27,7 +27,7 @@ npm run dev          # 终端 2 → http://localhost:5173
 | Claude Code Agent Teams（Lead 动态生成队友） | 动态 | ✅ | ✅ | 可配置 |
 | DeepSeek Harness（插件化子会话编排） | 动态 | ✅ | ✅ | 可配置 |
 
-- **scripted**：用于测试
+- **scripted**：用于模拟调试。
 - **builtin**：真实LLM测试。
 - **external**：benchmark 系统不跑 Agent，交给外部CLI，系统只负责调用、解析、展示。
 
