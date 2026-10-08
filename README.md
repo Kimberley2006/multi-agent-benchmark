@@ -27,9 +27,9 @@ npm run dev          # 终端 2 → http://localhost:5173
 | Claude Code Agent Teams（Lead 动态生成队友） | 动态 | ✅ | ✅ | 可配置 |
 | DeepSeek Harness（插件化子会话编排） | 动态 | ✅ | ✅ | 可配置 |
 
-- **scripted**：确定性场景引擎（免 Key）。按种子植入五类幻觉模式，用于管线联调、前端演示与核查引擎回归测试。
-- **builtin**：内置编排引擎按拓扑驱动**真实 LLM**（任意 OpenAI 兼容端点：DeepSeek / vLLM / Ollama 等）。工具调用由数据集 oracle 回答，形成 `action + observation` 执行记录。
-- **external**：把任务交给真实外部 CLI（`dsh` / `claude` / `deer-flow`），解析其 JSON 输出流。需在 `server/data/config.json` 配置探测命令与运行模板；探测失败时前端禁用该模式。
+- **scripted**：用于测试
+- **builtin**：真实LLM测试。
+- **external**：benchmark 系统不跑 Agent，交给外部CLI，系统只负责调用、解析、展示。
 
 模型配置（**密钥只放服务端**，绝不进前端）：
 
