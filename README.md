@@ -39,7 +39,6 @@ npm run dev          # 终端 2 → http://localhost:5173
   "llm": {
     "baseUrl": "https://api.deepseek.com/v1",
     "apiKey": "sk-…",
-    "model": "deepseek-chat"
   }
 }
 ```
