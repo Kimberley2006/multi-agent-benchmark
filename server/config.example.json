@@ -1,0 +1,26 @@
+{
+  "llm": {
+    "baseUrl": "https://api.deepseek.com/v1",
+    "apiKey": "在服务端填写，绝不要提交到仓库或写入前端",
+    "model": "deepseek-chat",
+    "temperature": 0.7,
+    "maxTokens": 2048
+  },
+  "external": {
+    "dsh": {
+      "command": "node /data1/wuhan/deepseek-harness/apps/cli/lib/bin.js --version",
+      "runTemplate": "",
+      "logGlob": "events*.jsonl",
+      "cwd": "/data1/wuhan/deepseek-harness"
+    },
+    "claudeTeam": {
+      "command": "claude --version",
+      "runTemplate": "claude -p {task} --output-format stream-json --verbose --max-turns 24"
+    },
+    "deerflow": {
+      "command": "deer-flow --version",
+      "runTemplate": "deer-flow \"{task}\""
+    }
+  },
+  "audit": { "llmAssist": false }
+}

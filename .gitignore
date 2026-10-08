@@ -1,0 +1,13 @@
+node_modules
+dist
+.DS_Store
+*.log
+*.tar.gz
+.codex/
+upload/
+deliverables/
+
+# 后端运行时数据（含 API Key 与运行记录，勿提交）
+server/data/config.json
+server/data/runs/
+server/data/datasets/
