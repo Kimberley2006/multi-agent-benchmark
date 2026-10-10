@@ -45,7 +45,7 @@ npm run dev          # 终端 2 → http://localhost:5173
 
 或用环境变量 `TRACELAB_LLM_BASE_URL / TRACELAB_LLM_API_KEY / TRACELAB_LLM_MODEL`。
 
-## 数据集（4 个）
+## 数据集（5 个）
 
 | 数据集 | 任务域 | 内置样例 | 官方数据接入 |
 |---|---|---|---|
@@ -53,6 +53,11 @@ npm run dev          # 终端 2 → http://localhost:5173
 | SWE-bench Verified | 代码修复 | 2 | 官方 JSONL → `server/data/datasets/swebench/` |
 | BrowseComp-Plus | 网络研究 | 2 | JSONL → `server/data/datasets/browsecomp/` |
 | LeanDojo | Lean 4 形式化证明 | 2 | JSONL → `server/data/datasets/leandojo/` |
+| PowerPlan 电力生产计划 | 多时段经济调度 | 2 | JSONL → `server/data/datasets/powerplan/` |
+
+PowerPlan 用数据集约束检查逐时段负荷平衡、机组最小/最大出力、备用要求和线性发电成本，并将提交成本与模型内精确 merit-order 最优值比较。额外 JSONL 每行包含 `id`、`title`、`prompt`、`context`、`periods`、`generators`；`periods` 的项含 `id`、`demandMw`、`reserveMw` 和可选 `durationHours` / `maxMw`，`generators` 的项含 `id`、`minMw`、`maxMw`、`costPerMwh`。当前样例模型不含网损、机组启停、爬坡和输电网络约束。
+
+约束全通过只说明计划在**已编码模型内可行**；需再通过独立成本比较才能称为该模型内最优。它仍不能证明自然语言推理的每个句子都真实，也不能覆盖未建模的电网事实。因此报告应按主张引用输入数据或验证器输出，并把范围外主张标为未验证，而不是给整段分析盖“无幻觉”章。
 
 
 ## 逐主张证据核查（是非问 + 证据）

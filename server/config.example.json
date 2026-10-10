@@ -1,8 +1,8 @@
 {
   "llm": {
-    "baseUrl": "https://api.deepseek.com/v1",
-    "apiKey": "在服务端填写，绝不要提交到仓库或写入前端",
-    "model": "deepseek-chat",
+    "baseUrl": "https://api.groq.com/openai/v1",
+    "apiKey": "在服务端填写 Groq API Key；勿提交到仓库或写入前端",
+    "model": "deepseek-r1-distill-qwen-32b",
     "temperature": 0.7,
     "maxTokens": 2048
   },
@@ -22,5 +22,7 @@
       "runTemplate": "deer-flow \"{task}\""
     }
   },
-  "audit": { "llmAssist": false }
+  "audit": {
+    "llmAssist": false
+  }
 }

@@ -233,8 +233,11 @@ const DATA = {
 
 const state = {
   architecture: 'Harness Dynamic',
-  tab: 'composition',
+  tab: 'trace',
   selectedId: 'y4',
+  selectedAgent: null,
+  selectedMessageId: null,
+  selectedTaskInfoId: null,
   compareA: 'Pipeline',
   compareB: 'Harness Dynamic',
   query: '',
@@ -433,7 +436,6 @@ function tabs() {
     <button data-tab="runs" class="${state.tab==='runs'?'active':''}">运行台 <span>${state.backend?state.runs.length:'—'}</span></button>
     <button data-tab="audit" class="${state.tab==='audit'?'active':''}">核查轨迹 <span>${state.runs.filter(r=>r.audited).length||''}</span></button>
     <button data-tab="phenomena" class="${state.tab==='phenomena'?'active':''}">失败现象 <span>${state.phenomena.data?state.phenomena.data.phenomena.reduce((n,p)=>n+p.total,0):''}</span></button>
-    ${hasComposition()?`<button data-tab="composition" class="${state.tab==='composition'?'active':''}">架构组合 <span>${episodesFor().length}</span></button>`:''}
     <button data-tab="trace" class="${state.tab==='trace'?'active':''}">执行轨迹 <span>${getTrace().events.length}</span></button>
     <button data-tab="compare" class="${state.tab==='compare'?'active':''}">并排比较</button>
     <button data-tab="metrics" class="${state.tab==='metrics'?'active':''}">指标视图</button>
@@ -528,7 +530,9 @@ function traceView() {
     const matchesKind = state.kindFilter==='all' || e.kind===state.kindFilter || (state.kindFilter==='hallucination' && annotationOf(e));
     return matchesQ && matchesKind;
   });
-  return `<div class="trace-grid">
+  const agents = [...new Set([...trace.agents, ...trace.events.map(e=>e.agent), ...trace.events.map(e=>e.to).filter(Boolean)])];
+  const selectedAgent = agents.includes(state.selectedAgent) ? state.selectedAgent : (state.selectedAgent = null);
+  return `<div class="trace-grid trace-focus">
     <aside class="trace-rail">
       <div class="panel-head"><div><span class="eyebrow">SESSION</span><h2>执行事件</h2></div><span class="count">${events.length}/${trace.events.length}</span></div>
       <div class="search">${ICONS.search}<input id="eventSearch" value="${escapeHTML(state.query)}" placeholder="搜索 agent / action" /></div>
@@ -542,13 +546,66 @@ function traceView() {
     <main class="trajectory">
       ${first ? firstErrorBanner(first) : autoAuditBanner() || successBanner()}
       ${agentFlow(trace)}
-      <div class="timeline-head"><div><span class="eyebrow">TEMPORAL TRACE</span><h2>${escapeHTML(trace.task)}</h2></div><div class="legend"><span><i class="dot action"></i>Action</span><span><i class="dot observe"></i>Observation</span><span><i class="dot message"></i>Message</span></div></div>
-      <div class="timeline">
-        ${events.map(e=>timelineCard(e)).join('')}
-      </div>
+      ${agentCommunicationView(trace, selectedAgent)}
+      ${taskInformationView(trace)}
     </main>
     <aside class="inspector">${inspector(ev)}</aside>
   </div>`;
+}
+
+function agentCommunicationView(trace, agent) {
+  const messages=trace.events.filter(e=>e.to&&e.to!==e.agent).filter(e=>!agent||e.agent===agent||e.to===agent);
+  if(!messages.some(e=>String(e.id)===String(state.selectedMessageId)))state.selectedMessageId=null;
+  const selected=messages.find(e=>String(e.id)===String(state.selectedMessageId));
+  const route=selected?messageRoute(trace,selected):{origin:null,steps:[]};
+  const infoItems=informationItems(trace);
+  const infoTagOf=e=>{
+    const own=infoItems.map((item,i)=>String(item.origin.id)===String(e.id)?i:-1).filter(i=>i>=0);
+    const idx=own.length?own:[infoItems.findIndex(item=>item.steps.some(st=>String(st.id)===String(e.id)))].filter(i=>i>=0);
+    return idx.map(i=>`${infoItems[i].claim?'Claim':'信息'} ${String(i+1).padStart(2,'0')}`).join(' · ');
+  };
+  return `<section class="agent-detail-panel agent-communication-panel"><header><div><span class="eyebrow">AGENT COMMUNICATIONS · Agent 信息收发</span><h2>${agent?`${escapeHTML(agent)} 的信息交互`:'Agent 信息交互'}</h2><p>查看 Agent 产生、接收和传递的具体消息；点击消息可展开其上下游记录。</p></div><span class="count">${messages.length} 条消息</span></header><nav class="agent-filter">${[...new Set([...trace.agents,...trace.events.map(e=>e.agent),...trace.events.map(e=>e.to).filter(Boolean)])].map(name=>`<button data-agent-filter="${escapeHTML(name)}" class="${agent===name?'active':''}">${escapeHTML(name)}</button>`).join('')}</nav><div class="flow-choice-list">${messages.map((e,i)=>`<button class="flow-choice ${String(selected?.id)===String(e.id)?'active':''}" data-message-choice="${escapeHTML(e.id)}"><small>${escapeHTML(infoTagOf(e)||`消息 ${String(i+1).padStart(2,'0')}`)} · ${escapeHTML(e.time)}</small><b>${escapeHTML(e.detail||e.title||'未命名消息')}</b><span>${escapeHTML(e.agent)} → ${escapeHTML(e.to)}</span></button>`).join('')||'<div class="empty">当前 Agent 筛选下没有消息</div>'}</div>${selected?`<div class="flow-selected"><div class="flow-content"><span class="eyebrow">MESSAGE CONTENT</span><h3>${escapeHTML(selected.title||'Agent 消息')}</h3><p>${escapeHTML(selected.detail||'日志没有记录消息正文。')}</p><small>发送方：${escapeHTML(selected.agent)} · 接收方：${escapeHTML(selected.to)} · ${escapeHTML(selected.time)}</small></div><div class="flow-route-title"><b>关联事件</b><span>${route.steps.length} 个有记录的事件</span></div><div class="flow-route">${route.steps.map((e,i)=>`<article class="flow-step ${String(e.id)===String(selected.id)?'handoff':''}"><div class="flow-step-index">${String(e.id)===String(selected.id)?'传递':e.to?'转交':'处理'}</div><div><b>${escapeHTML(e.agent)}${e.to?` → ${escapeHTML(e.to)}`:''}</b><strong>${escapeHTML(e.title||e.kind)}</strong><p>${escapeHTML(e.detail||'没有记录详细内容。')}</p></div><time>${escapeHTML(e.time)}</time></article>`).join('')||'<p class="muted">日志没有记录可还原的上下游事件。</p>'}</div></div>`:''}</section>`;
+}
+
+function taskInformationView(trace) {
+  const items=informationItems(trace);
+  if(!items.some(item=>item.key===state.selectedTaskInfoId))state.selectedTaskInfoId=null;
+  const selected=items.find(item=>item.key===state.selectedTaskInfoId);
+  return `<section class="agent-detail-panel task-information-panel"><header><div><span class="eyebrow">TASK INFORMATION INDEX · 本次任务信息</span><h2>本次任务产生的信息</h2><p>按信息内容汇总本次任务中的 Claim 与消息。点击一条信息查看它经过哪些 Agent，以及日志记录的处理和转交过程。</p></div><span class="count">${items.length} 条信息</span></header><div class="flow-choice-list">${items.map((item,i)=>`<button class="flow-choice ${item.key===selected?.key?'active':''}" data-task-info-choice="${escapeHTML(item.key)}"><small>${item.claim?'Claim':'信息'} ${String(i+1).padStart(2,'0')} · ${escapeHTML(item.origin.time)}</small><b>${escapeHTML(item.text)}</b><span>${escapeHTML(item.origin.agent)}${item.origin.to?` → ${escapeHTML(item.origin.to)}`:' · 产生'}</span></button>`).join('')||'<div class="empty">日志没有记录可汇总的 Claim 或 Agent 间信息</div>'}</div>${selected?`<div class="flow-selected"><div class="flow-content"><span class="eyebrow">${selected.claim?'CLAIM':'INFORMATION'}</span><h3>${escapeHTML(selected.text)}</h3><p>${escapeHTML(selected.origin.detail||selected.origin.title||'日志没有记录更多上下文。')}</p><small>产生者：${escapeHTML(selected.origin.agent)} · ${escapeHTML(selected.origin.time)}</small></div><div class="flow-route-title"><b>Agent 传播路径</b><span>${selected.steps.length} 个有记录的事件</span></div><div class="flow-route">${selected.steps.map((e,i)=>{const sameClaim=(e.claims||[]).find(c=>c.id===selected.claim?.id);return `<article class="flow-step ${i===0?'handoff':''}"><div class="flow-step-index">${i===0?'产生':e.to?'传递':'处理'}</div><div><b>${escapeHTML(e.agent)}${e.to?` → ${escapeHTML(e.to)}`:''}</b><strong>${escapeHTML(e.title||e.kind)}</strong><p>${escapeHTML(sameClaim?.text||e.detail||'日志没有记录这一步的处理内容。')}</p></div><time>${escapeHTML(e.time)}</time></article>`;}).join('')||'<p class="muted">日志没有记录可还原的传播事件。</p>'}</div>${selected.steps.length<2?'<p class="flow-unrecorded">日志中未记录这条信息后续被其他 Agent 接收。</p>':''}</div>`:''}</section>`;
+}
+
+function informationItems(trace) {
+  const events=trace.events, occurrences=[];
+  events.forEach(event=>(event.claims||[]).forEach(claim=>occurrences.push({event,claim})));
+  const downstreamEvents=new Set(occurrences.flatMap(({claim})=>(claim.adoptedBy||[]).map(String)));
+  const items=[];
+  for(const {event,claim} of occurrences){
+    if(downstreamEvents.has(String(event.id)))continue;
+    const included=new Set([String(event.id)]), queue=[event];
+    while(queue.length){const current=queue.shift();for(const childId of (current.claims||[]).flatMap(c=>c.adoptedBy||[])){const child=events.find(e=>String(e.id)===String(childId));if(child&&!included.has(String(child.id))){included.add(String(child.id));queue.push(child);}}}
+    const steps=events.filter(e=>included.has(String(e.id)));
+    items.push({key:`claim:${event.id}:${claim.id}`,claim,origin:event,text:claim.text||'日志中的 Claim 未记录文本',steps});
+  }
+  const claimEventIds=new Set(occurrences.map(({event})=>String(event.id)));
+  events.filter(e=>e.to&&e.to!==e.agent&&!claimEventIds.has(String(e.id))).forEach(event=>{
+    const route=messageRoute(trace,event);
+    items.push({key:`message:${event.id}`,origin:event,text:event.detail||event.title||'未记录信息内容',steps:route.steps});
+  });
+  return items.sort((a,b)=>events.indexOf(a.origin)-events.indexOf(b.origin));
+}
+
+function messageRoute(trace, selected) {
+  const events=trace.events, byId=new Map(events.map((e,i)=>[String(e.id),{event:e,index:i}]));
+  const ancestors=new Set(), queue=(selected.dependsOn||[]).map(String);
+  while(queue.length){const id=queue.shift();if(ancestors.has(id)||!byId.has(id))continue;ancestors.add(id);for(const dep of byId.get(id).event.dependsOn||[])queue.push(String(dep));}
+  const sourceCandidates=[...ancestors].map(id=>byId.get(id)).filter(x=>x.event.agent===selected.agent&&x.event.kind!=='message');
+  const origin=sourceCandidates.sort((a,b)=>b.index-a.index)[0]?.event || [...ancestors].map(id=>byId.get(id)).sort((a,b)=>b.index-a.index)[0]?.event || selected;
+  const included=new Set([String(selected.id)]), forward=[String(selected.id)];
+  while(forward.length){const id=forward.shift();for(const e of events){if((e.dependsOn||[]).some(dep=>String(dep)===id)&&!included.has(String(e.id))){included.add(String(e.id));forward.push(String(e.id));}}}
+  const sourceIndex=events.indexOf(origin);
+  const steps=events.filter((e,i)=>String(e.id)===String(selected.id)||i>=sourceIndex&&ancestors.has(String(e.id))||included.has(String(e.id)));
+  const downstream=steps.filter(e=>String(e.id)!==String(selected.id)&&events.indexOf(e)>events.indexOf(selected));
+  return {origin,steps,unrecorded:downstream.length===0};
 }
 
 function eventRow(e, index) {
@@ -577,15 +634,53 @@ function successBanner() {
   return `<div class="success-banner">${ICONS.check}<div><b>人工 Gold 轨迹中未标注幻觉</b><span>已复核 ${reviewed}/${total} 个事件；未复核事件不会被自动判为正确或错误。</span></div></div>`;
 }
 
-function agentFlow(trace) {
-  const messages = trace.events.filter(e=>e.to);
-  return `<div class="agent-flow">
-    <div class="flow-label"><span class="eyebrow">COMMUNICATION MAP</span><span>${messages.length} 条消息边</span></div>
-    <div class="agent-nodes">
-      ${trace.agents.map((a,i)=>`<div class="agent-node" style="--delay:${i*30}ms"><span>${initials(a)}</span><b>${escapeHTML(a)}</b><small>${trace.events.filter(e=>e.agent===a).length} events</small></div>`).join('<div class="node-connector">→</div>')}
-    </div>
-    <div class="message-routes">${messages.map(m=>`<button data-event="${m.id}"><b>${escapeHTML(m.agent)}</b><span>→ ${escapeHTML(m.to)}</span><em>${escapeHTML(m.relation||'message')}</em></button>`).join('') || '<span class="muted">Agent 之间无直接通信</span>'}</div>
-  </div>`;
+function agentFlow(trace, { interactive = true } = {}) {
+  const edges = trace.events.filter(e=>e.to && e.to!==e.agent);
+  const selectedItem=informationItems(trace).find(item=>item.key===state.selectedTaskInfoId);
+  const highlighted=new Set(selectedItem?selectedItem.steps.map(e=>String(e.id)):[]);
+  const agents = [...new Set([...trace.agents, ...trace.events.map(e=>e.agent), ...edges.map(e=>e.to)].filter(Boolean))];
+  const width=760, height=Math.max(250,Math.min(390,agents.length*62)), boxW=126, boxH=46;
+  const center={x:width/2,y:height/2};
+  const points=new Map(agents.map((name,i)=>{
+    const angle=(-Math.PI/2)+(2*Math.PI*i/Math.max(agents.length,1));
+    const radius=Math.min(width*.36,height*.38);
+    return [name,{x:center.x+Math.cos(angle)*radius,y:center.y+Math.sin(angle)*radius}];
+  }));
+  const dirRank=new Map();
+  const paths=edges.map(e=>{
+    const a=points.get(e.agent), b=points.get(e.to); if(!a||!b)return '';
+    const dk=`${e.agent}→${e.to}`, rank=dirRank.get(dk)||0; dirRank.set(dk,rank+1);
+    // 平行车道：以“字母序较小→较大”方向为参考法向，正向边偏一侧、反向边偏另一侧，
+    // 锚点沿偏移线与节点矩形边界求交，两个方向的线从锚点到中段都不重合。
+    const lo=e.agent<e.to?e.agent:e.to, side=e.agent===lo?1:-1;
+    const pa=points.get(lo), pb=points.get(e.agent===lo?e.to:e.agent);
+    const rl=Math.max(1,Math.hypot(pb.x-pa.x,pb.y-pa.y));
+    const ox=-(pb.y-pa.y)/rl, oy=(pb.x-pa.x)/rl;
+    const lane=side*(9+16*rank);
+    const ang=Math.atan2(b.y-a.y,b.x-a.x), nx=Math.cos(ang), ny=Math.sin(ang);
+    const borderPoint=(c,dir)=>{
+      const lx=ox*lane, ly=oy*lane, ex=dir*nx, ey=dir*ny;
+      const tx=ex>0?(boxW/2+2.5-lx)/ex:ex<0?(boxW/2+2.5+lx)/(-ex):Infinity;
+      const ty=ey>0?(boxH/2+2.5-ly)/ey:ey<0?(boxH/2+2.5+ly)/(-ey):Infinity;
+      const t=Math.max(0,Math.min(tx,ty));
+      return {x:c.x+lx+ex*t,y:c.y+ly+ey*t};
+    };
+    const start=borderPoint(a,1), end=borderPoint(b,-1);
+    const bow=side*(5+8*rank);
+    const cx=(start.x+end.x)/2+ox*bow, cy=(start.y+end.y)/2+oy*bow;
+    const lt=side>0?0.42:0.58, lu=1-lt;
+    const labelX=lu*lu*start.x+2*lu*lt*cx+lt*lt*end.x, labelY=lu*lu*start.y+2*lu*lt*cy+lt*lt*end.y;
+    const relation=String(e.relation||'message');
+    return `<g class="network-edge ${highlighted.has(String(e.id))?'route-active':''}" ${interactive?`data-event="${escapeHTML(e.id)}" tabindex="0" role="button" aria-label="${escapeHTML(e.agent)} → ${escapeHTML(e.to)}：${escapeHTML(e.title)}"`:''}><path class="edge-hit" d="M${start.x},${start.y} Q${cx},${cy} ${end.x},${end.y}"/><path class="edge-line" d="M${start.x},${start.y} Q${cx},${cy} ${end.x},${end.y}" marker-end="url(#network-arrow)"/><text class="edge-label" x="${labelX}" y="${labelY-4}">${escapeHTML(relation.length>18?`${relation.slice(0,16)}…`:relation)}</text><title>${escapeHTML(e.agent)} → ${escapeHTML(e.to)} · ${escapeHTML(relation)} · ${escapeHTML(e.title)}</title></g>`;
+  }).join('');
+  const nodes=agents.map(name=>{const p=points.get(name), count=trace.events.filter(e=>e.agent===name).length;
+    return `<g class="network-node ${state.selectedAgent===name?'active':''}" data-agent="${escapeHTML(name)}" tabindex="0" role="button" transform="translate(${p.x-boxW/2},${p.y-boxH/2})"><rect width="${boxW}" height="${boxH}" rx="4"/><text class="node-name" x="${boxW/2}" y="20">${escapeHTML(name.length>19?`${name.slice(0,17)}…`:name)}</text><text class="node-count" x="${boxW/2}" y="35">${count} events</text><title>点击查看 ${escapeHTML(name)} 的信息收发</title></g>`;
+  }).join('');
+  return `<section class="agent-flow">
+    <div class="flow-label"><span class="eyebrow">AGENT COLLABORATION NETWORK</span><span>${agents.length} 个 Agent · ${edges.length} 条有向边</span></div>
+    ${edges.length?`<div class="network-canvas"><svg class="agent-network" viewBox="0 0 ${width} ${height}" role="img" aria-label="Agent 协作关系网"><defs><marker id="network-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="11" markerHeight="11" markerUnits="userSpaceOnUse" orient="auto"><path d="M0 1 L10 5 L0 9 z" fill="#4b6683"/></marker><marker id="network-arrow-bright" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="11" markerHeight="11" markerUnits="userSpaceOnUse" orient="auto"><path d="M0 1 L10 5 L0 9 z" fill="#57bed3"/></marker></defs>${paths}${nodes}</svg></div><div class="network-legend"><span><i></i>消息 / 委派 / 报告</span><small>点击 Agent 查看其收发与处理过程；点击连线定位具体消息</small></div>`:'<div class="network-canvas"><svg class="agent-network" viewBox="0 0 760 300" role="img" aria-label="Agent 节点关系">${nodes}</svg></div><div class="network-empty">当前运行没有记录 Agent 间的直接通信；仍可点击 Agent 查看执行记录。</div>'}
+    ${interactive?`<div class="message-routes">${edges.map(m=>`<button data-event="${escapeHTML(m.id)}"><b>${escapeHTML(m.agent)}</b><span>→ ${escapeHTML(m.to)}</span><em>${escapeHTML(m.relation||'message')}</em></button>`).join('') || '<span class="muted">暂无可跳转的通信事件</span>'}</div>`:''}
+  </section>`;
 }
 
 function trace_audit_origin(e) { return firstError() ? 'Gold 错误起点' : '自动核查 · 起点'; }
@@ -613,6 +708,7 @@ function inspector(e) {
   const idx = getTrace().events.indexOf(e)+1;
   return `<div class="panel-head inspector-head"><div><span class="eyebrow">EVIDENCE INSPECTOR</span><h2>事件 E${String(idx).padStart(2,'0')}</h2></div><span class="kind-pill">${escapeHTML(e.kind)}</span></div>
     <div class="inspect-meta"><span><small>AGENT</small><b>${escapeHTML(e.agent)}</b></span><span><small>TIMESTAMP</small><b>${escapeHTML(e.time)}</b></span></div>
+    ${e.to?`<div class="inspect-section message-payload"><div class="section-title"><h4>通信内容</h4><span>${escapeHTML(e.relation||'message')}</span></div><div class="message-direction"><b>${escapeHTML(e.agent)}</b><i>→</i><b>${escapeHTML(e.to)}</b></div><p>${escapeHTML(e.detail||e.title||'该通信事件没有记录正文。')}</p>${e.claims?.length?`<div class="message-claims"><b>随消息传递的主张</b>${e.claims.map(c=>`<p>${escapeHTML(typeof c==='string'?c:c.text||JSON.stringify(c))}</p>`).join('')}</div>`:''}${e.dependsOn?.length?`<small class="message-deps">依赖事件：${e.dependsOn.map(escapeHTML).join('、')}</small>`:''}</div>`:''}
     <div class="inspect-section">
       <h4>状态对齐证据</h4>
       <div class="diff-grid"><div><label>EXPECTED</label>${jsonBlock(e.expected)}</div><div class="${isMismatch(e)?'diff-bad':''}"><label>OBSERVED</label>${jsonBlock(e.observed)}</div></div>
@@ -800,10 +896,12 @@ function liveMonitorHTML() {
   if (!state.live) return '';
   const st = RUN_STATUS[state.live.status] || { label: state.live.status, tone: '#6b788c' };
   const finished = state.live.status && state.live.status !== 'running';
+  const run=state.runs.find(r=>r.id===state.live.runId);
   return `<div class="live-monitor" id="liveMonitor">
     <div class="live-head">
       <span class="live-dot" style="--tone:${st.tone}"></span>
       <b>${state.live.runId}</b>
+      <span class="live-run-context">${escapeHTML(run?.archName||'多 Agent 运行')} · ${escapeHTML(run?.taskTitle||'组织架构随事件更新')}</span>
       <span class="run-status" style="--tone:${st.tone}">${st.label}</span>
       <span class="count" id="liveCount">${state.live.events.length} events</span>
       <div class="live-actions">
@@ -813,6 +911,7 @@ function liveMonitorHTML() {
         <button class="mini-btn" data-run-action="close-monitor">关闭</button>
       </div>
     </div>
+    <div class="live-network-slot">${agentFlow({agents:[],events:state.live.events},{interactive:false})}</div>
     <div class="live-stream" id="liveStream">
       ${state.live.events.slice(-40).map(e=>liveEventLine(e)).join('')||'<div class="muted">等待事件…</div>'}
     </div>
@@ -996,21 +1095,24 @@ function modal() {
 }
 
 function render() {
-  if (state.tab==='composition' && !hasComposition()) state.tab='trace';
-  const view=state.tab==='composition'?compositionView():state.tab==='trace'?traceView():state.tab==='compare'?compareView():state.tab==='catalog'?catalogView():state.tab==='runs'?runConsoleView():state.tab==='audit'?auditView():state.tab==='phenomena'?phenomenaView():metricsView();
+  if (state.tab==='composition') state.tab='trace';
+  const view=state.tab==='trace'?traceView():state.tab==='compare'?compareView():state.tab==='catalog'?catalogView():state.tab==='runs'?runConsoleView():state.tab==='audit'?auditView():state.tab==='phenomena'?phenomenaView():metricsView();
   const showControls=!['runs','audit','catalog','phenomena'].includes(state.tab);
   app.innerHTML = `${header()}${showControls?controls():''}${tabs()}<div class="workspace">${view}</div>${modal()}`;
   bind();
 }
 
 function bind() {
+  document.querySelectorAll('[data-message-choice]').forEach(btn=>btn.onclick=()=>{state.selectedMessageId=btn.dataset.messageChoice;render();});
+  document.querySelectorAll('[data-task-info-choice]').forEach(btn=>btn.onclick=()=>{state.selectedTaskInfoId=btn.dataset.taskInfoChoice;render();});
+  document.querySelectorAll('[data-agent-filter]').forEach(btn=>btn.onclick=()=>{state.selectedAgent=state.selectedAgent===btn.dataset.agentFilter?null:btn.dataset.agentFilter;render();});
+  document.querySelectorAll('.network-node[data-agent]').forEach(node=>node.onclick=e=>{e.stopPropagation();state.selectedAgent=node.dataset.agent;render();});
   document.querySelectorAll('[data-arch]').forEach(btn=>btn.onclick=()=>{
     state.architecture=btn.dataset.arch; state.selectedId=getTrace().events[0]?.id;
-    if(!hasComposition() && state.tab==='composition')state.tab='trace';
     render();
   });
   document.querySelectorAll('[data-tab]').forEach(btn=>btn.onclick=()=>{state.tab=btn.dataset.tab;if(state.tab==='runs')refreshRuns().then(render);if(state.tab==='phenomena')loadPhenomena();render();});
-  document.querySelectorAll('[data-event]').forEach(el=>el.onclick=()=>{state.selectedId=el.dataset.event;state.tab='trace';render();setTimeout(()=>document.querySelector('.time-card.selected')?.scrollIntoView({behavior:'smooth',block:'center'}),30);});
+  document.querySelectorAll('[data-event]').forEach(el=>el.onclick=()=>{state.selectedId=el.dataset.event;const event=getTrace().events.find(x=>String(x.id)===String(el.dataset.event));if(event?.agent)state.selectedAgent=event.agent;if(event?.to)state.selectedMessageId=event.id;state.tab='trace';render();setTimeout(()=>document.querySelector('.time-card.selected')?.scrollIntoView({behavior:'smooth',block:'center'}),30);});
   document.querySelectorAll('[data-kind]').forEach(btn=>btn.onclick=()=>{state.kindFilter=btn.dataset.kind;render();});
   const search=document.querySelector('#eventSearch'); if(search) search.oninput=e=>{state.query=e.target.value; const pos=e.target.selectionStart; render(); const n=document.querySelector('#eventSearch'); n.focus();n.setSelectionRange(pos,pos);};
   document.querySelector('#pasteBtn').onclick=()=>document.querySelector('#pasteDialog').showModal();
@@ -1024,7 +1126,7 @@ function bind() {
   });
   document.querySelector('#fileInput').onchange=async e=>{const f=e.target.files[0];if(!f)return;try{loadImported(await f.text(),f.name);state.tab='trace';render();showToast(`已导入 ${f.name} · ${getTrace().events.length} events`);}catch(err){showToast('导入失败：'+err.message,true);}finally{e.target.value='';}};
   document.querySelector('#goldInput').onchange=async e=>{const f=e.target.files[0];if(!f)return;try{const count=loadGold(await f.text());render();showToast(`已载入 ${count} 条人工 Gold 标注`);}catch(err){showToast('Gold 导入失败：'+err.message,true);}};
-  const sample=document.querySelector('#sampleBtn');if(sample)sample.onclick=()=>{state.architecture='Harness Dynamic';state.selectedId='y4';state.tab='composition';state.query='';state.kindFilter='all';render();showToast('DeepSeek Harness 组合示例已重置');};
+  const sample=document.querySelector('#sampleBtn');if(sample)sample.onclick=()=>{state.architecture='Harness Dynamic';state.selectedId='y4';state.tab='trace';state.query='';state.kindFilter='all';render();showToast('DeepSeek Harness 执行轨迹示例已重置');};
   document.querySelectorAll('[data-annotation]').forEach(btn=>btn.onclick=()=>saveAnnotation(btn.dataset.annotation));
   document.querySelectorAll('[data-gold-status]').forEach(btn=>btn.onclick=()=>saveGoldStatus(btn.dataset.goldStatus));
   document.querySelectorAll('[data-save-claim]').forEach(btn=>btn.onclick=()=>saveClaim(btn.dataset.saveClaim));
@@ -1100,6 +1202,8 @@ function subscribeLive(runId) {
     onEvent:ev=>{
       if(!state.live||state.live.runId!==runId)return;
       state.live.events.push(ev);
+      const network=document.querySelector('.live-network-slot');
+      if(network)network.innerHTML=agentFlow({agents:[],events:state.live.events},{interactive:false});
       const stream=document.querySelector('#liveStream');
       if(stream){ stream.insertAdjacentHTML('beforeend',liveEventLine(ev)); stream.scrollTop=stream.scrollHeight;
         const c=document.querySelector('#liveCount'); if(c)c.textContent=`${state.live.events.length} events`; }
@@ -1113,6 +1217,14 @@ function subscribeLive(runId) {
       else if(dot&&s.status&&s.status!=='running'){ dot.textContent=s.status; }
     },
   });
+  // SSE 推送增量；读取已有事件后合并，保证打开历史运行时也能看到完整组织网。
+  api.run(runId).then(run=>{
+    if(!state.live||state.live.runId!==runId)return;
+    const known=new Set(state.live.events.map(e=>e.id));
+    state.live.events=[...run.events.filter(e=>!known.has(e.id)),...state.live.events].sort((a,b)=>(a.seq||0)-(b.seq||0));
+    state.live.status=run.status||state.live.status;
+    render();
+  }).catch(()=>{});
 }
 
 async function refreshRuns(){ try{ state.runs=await api.runs(); }catch{ /* offline */ } }
@@ -1128,7 +1240,7 @@ async function loadRunIntoAnalysis(runId,jumpEventId) {
   state.architecture=runId;
   state.selectedId=jumpEventId&&trace.events.some(e=>e.id===jumpEventId)?jumpEventId:(trace.events[0]?.id);
   state.query=''; state.kindFilter='all';
-  state.tab=hasComposition(runId)?'composition':'trace';
+  state.tab='trace';
   render();
 }
 
@@ -1296,7 +1408,7 @@ function loadImported(raw,filename) {
   state.architecture=importedKey;state.selectedId=events[0].id;state.query='';state.kindFilter='all';
   if(Array.isArray(parsed.gold_annotations))loadGold(JSON.stringify(parsed.gold_annotations));
   else recomputeGoldMetrics(DATA[importedKey],importedKey);
-  state.tab=hasComposition()?'composition':'trace';render();
+  state.tab='trace';render();
 }
 
 Object.entries(DATA).forEach(([name,trace])=>recomputeGoldMetrics(trace,name));

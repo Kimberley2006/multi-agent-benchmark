@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# TraceLab 一键启动/重启：bash /data1/wuhan/trace-lab-export/start.sh
+# TraceLab 一键启动/重启：bash ./start.sh
 set -u
-DIR="/data1/wuhan/trace-lab-export"
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOG="/tmp/tracelab-server.log"
 
-# 清理两种启动形式的旧进程（绝对路径启动 / 项目目录内相对路径启动）
-pkill -f "^node $DIR/server" 2>/dev/null && sleep 1
-pkill -f "^node server/index.js" 2>/dev/null && sleep 1
+# 仅清理当前 checkout 的服务进程，避免误杀其他项目。
+pkill -f "^node $DIR/server/index.js$" 2>/dev/null && sleep 1
 cd "$DIR" || { echo "目录不存在: $DIR"; exit 1; }
 
-if [ ! -d dist ]; then echo "dist 未构建，先执行 npm run build …"; npm run build || exit 1; fi
+echo "构建当前 checkout 的前端资源 …"
+npm run build || exit 1
 
-setsid nohup node server/index.js > "$LOG" 2>&1 < /dev/null &
+setsid nohup node "$DIR/server/index.js" > "$LOG" 2>&1 < /dev/null &
 sleep 2
 
 if curl -s -m 2 http://127.0.0.1:8787/api/status | grep -q '"ok":true'; then

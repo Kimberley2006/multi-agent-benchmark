@@ -4,8 +4,9 @@ import { eurekaBench } from './eurekabench.js';
 import { sweBenchVerified } from './swebench.js';
 import { browseCompPlus } from './browsecomp.js';
 import { leanDojo } from './leandojo.js';
+import { powerPlan } from './powerplan.js';
 
-const REGISTRY = { eurekabench: eurekaBench, swebench: sweBenchVerified, browsecomp: browseCompPlus, leandojo: leanDojo };
+const REGISTRY = { eurekabench: eurekaBench, swebench: sweBenchVerified, browsecomp: browseCompPlus, leandojo: leanDojo, powerplan: powerPlan };
 
 /** 额外任务目录：把官方数据文件挂载进对应数据集。 */
 const EXTRA_DIR = process.env.TRACELAB_DATA_DIR
